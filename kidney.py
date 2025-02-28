@@ -307,9 +307,7 @@ plot_metrics(train_acc_list, test_acc_list, train_loss_list, test_loss_list, epo
 
 torch.save(model.state_dict(), "model.pth")
 
-!pip install python-multipart
 
-!pip install fastapi uvicorn
 
 from fastapi import FastAPI, UploadFile, File
 import torch
