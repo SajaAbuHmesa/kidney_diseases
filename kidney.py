@@ -302,17 +302,19 @@ plot_metrics(train_acc_list, test_acc_list, train_loss_list, test_loss_list, epo
 
 torch.save(model.state_dict(), "model.pth")
 
-
-
-from fastapi import FastAPI, UploadFile, File
 import torch
-from torchvision import transforms
+import torch.nn as nn
+from torchvision import models, transforms
+from fastapi import FastAPI, UploadFile, File
 from PIL import Image
 import io
+from flask import Flask
+import threading
 
+# FastAPI app for prediction
 app = FastAPI()
 
-# تحميل النموذج
+# Define the Kidney Disease Model class
 class KidneyDiseaseModel(nn.Module):
     def __init__(self, num_classes=4):
         super(KidneyDiseaseModel, self).__init__()
@@ -322,28 +324,58 @@ class KidneyDiseaseModel(nn.Module):
     def forward(self, x):
         return self.backbone(x)
 
+# Set up device (CUDA or CPU)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Initialize and load the model
 model = KidneyDiseaseModel(num_classes=4)
 model.load_state_dict(torch.load("model.pth", map_location=device))
 model.to(device)
 model.eval()
 
-# تحضير التحويلات نفسها المستخدمة في التدريب
+# Prepare image transformation (same as during training)
 transform = transforms.Compose([
     transforms.Resize((128, 128)),
     transforms.ToTensor()
 ])
 
+# FastAPI route for prediction
 @app.post("/predict/")
 async def predict(file: UploadFile = File(...)):
-    image = Image.open(io.BytesIO(await file.read())).convert("RGB")
-    image = transform(image).unsqueeze(0).to(device)
+    try:
+        # Read and preprocess image
+        image = Image.open(io.BytesIO(await file.read())).convert("RGB")
+        image = transform(image).unsqueeze(0).to(device)
 
-    with torch.no_grad():
-        output = model(image)
-        prediction = torch.argmax(output, dim=1).item()
+        # Perform inference
+        with torch.no_grad():
+            output = model(image)
+            prediction = torch.argmax(output, dim=1).item()
 
-    return {"prediction": prediction}
+        return {"prediction": prediction}
+    except Exception as e:
+        return {"error": str(e)}
 
+# Flask app for home route
+flask_app = Flask(__name__)
 
+@flask_app.route('/')
+def home():
+    return "Hello, Kidney!"
 
+# Function to run the FastAPI app in a separate thread
+def run_fastapi():
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+# Function to run the Flask app
+def run_flask():
+    flask_app.run(host='0.0.0.0', port=5000)
+
+if __name__ == "__main__":
+    # Running FastAPI in a separate thread
+    fastapi_thread = threading.Thread(target=run_fastapi)
+    fastapi_thread.start()
+
+    # Running Flask app
+    run_flask()
